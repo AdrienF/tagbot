@@ -21,10 +21,13 @@ import markdown
 parser = argparse.ArgumentParser(description = 'Tag bot')
 parser.add_argument('slackbot_token', type=str, help='An ID for the slackbot')
 parser.add_argument('--database', nargs=1, type=str, default='database.db', help='The name of the database')
+parser.add_argument('--htmldir', nargs=1, type=str, default='.',
+                    help='The directory containing output HTML for weekly digests')
 args = parser.parse_args()
 
 SLACKBOT_TOKEN = args.slackbot_token
 DATABASE = args.database
+HTMLDIR= args.htmldir
 COMMAND_WORD = 'sum-up'
 SLACK_CLIENT ,BOT_ID ,AT_BOT, AT_CHAN = get_slackConstants(SLACKBOT_TOKEN, "tagbot")
 
@@ -156,10 +159,15 @@ def removeTagFromDB(conn, item):
     currentTags = getTagsSet(entry[0])
     print('tags for link {} : {}'.format(url, currentTags))
     newtag = item['tags']
-    print('iremove tag : {}'.format(newtag))
+    print('remove tag : {}'.format(newtag))
     currentTags.remove(newtag)
     try:
-        cursor.execute("""UPDATE links SET tags = ? WHERE link = ?""", (setTagsString(currentTags),url,))
+        if len(currentTags) == 0:
+            # delete the row
+            cursor.execute("""DELETE FROM links WHERE link = ?""",(url,))
+        else:
+            # update the row
+            cursor.execute("""UPDATE links SET tags = ? WHERE link = ?""", (setTagsString(currentTags),url,))
         conn.commit()
     except sqlite3.Error as e:
         print("editRow : Database error: {}".format(e))
@@ -207,7 +215,7 @@ def retrieveWeekSummary(conn):
     print '----'
     print markdownMsg
     print '----'
-    with open('{}_report.html'.format(today.isoformat()), 'w') as htmlFile:
+    with open('{}/{}_report.html'.format(HTMLDIR, today.isoformat()), 'w') as htmlFile:
         htmlMsg = markdown.markdown(markdownMsg, extensions=['markdown.extensions.tables'])
         htmlFile.write(htmlMsg)
 
