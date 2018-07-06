@@ -22,7 +22,7 @@ parser.add_argument('--database', nargs=1, type=str, default='database.db', help
 args = parser.parse_args()
 
 SLACKBOT_TOKEN = args.slackbot_token
-DATABASE = args.database[0]
+DATABASE = args.database
 COMMAND_WORD = 'sum-up'
 SLACK_CLIENT ,BOT_ID ,AT_BOT, AT_CHAN = get_slackConstants(SLACKBOT_TOKEN, "tagbot")
 
@@ -70,7 +70,7 @@ def connectToDB(dbName):
     return conn
 
 def insertRow(conn, item):
-    print('inserting new row : {}', item)
+    print('inserting new row : ', item)
     try:
         cursor = conn.cursor()
         cursor.execute("""
@@ -100,19 +100,20 @@ def setTagsString(tags):
     return ','.join(tags)
 
 def editRow(conn, item):
-    print('editing row with new tag')
+    print('---- editing row with new tag ----')
+    print('inserting item : {}'.format(item))
     cursor = conn.cursor()
     url = item['link']
     cursor.execute("""SELECT tags FROM links WHERE link = ?""",(url,))
     entry = cursor.fetchone()
     print('entry : {}'.format(entry))
     currentTags = getTagsSet(entry[0])
-    print('tags for link {} : {}'.format(url, currentTags))
-    newtag = item['reaction']
+    print('current tags for link {} : {}'.format(url, currentTags))
+    newtag = item['tags']
     print('insert a new tag : {}'.format(newtag))
     currentTags.add(newtag)
     try:
-        cursor.execute("""UPDATE links SET tags = ? WHERE link = ?""", (setTagsString(currentTags),link,))
+        cursor.execute("""UPDATE links SET tags = ? WHERE link = ?""", (setTagsString(currentTags),url,))
         conn.commit()
     except sqlite3.Error as e:
         print("editRow : Database error: {}".format(e))
@@ -142,7 +143,7 @@ def removeTagFromDB(conn, item):
     """
     search item in DB and remove the item tag from the entry
     """
-    print('removing tag {} from row {}'.format(item['reaction'],item['url']))
+    print('removing tag {} from row {}'.format(item['tags'],item['link']))
     cursor = conn.cursor()
     url = item['link']
     cursor.execute("""SELECT tags FROM links WHERE link = ?""",(url,))
@@ -150,11 +151,11 @@ def removeTagFromDB(conn, item):
     print('entry : {}'.format(entry))
     currentTags = getTagsSet(entry[0])
     print('tags for link {} : {}'.format(url, currentTags))
-    newtag = item['reaction']
+    newtag = item['tags']
     print('iremove tag : {}'.format(newtag))
     currentTags.remove(newtag)
     try:
-        cursor.execute("""UPDATE links SET tags = ? WHERE link = ?""", (setTagsString(currentTags),link,))
+        cursor.execute("""UPDATE links SET tags = ? WHERE link = ?""", (setTagsString(currentTags),url,))
         conn.commit()
     except sqlite3.Error as e:
         print("editRow : Database error: {}".format(e))
