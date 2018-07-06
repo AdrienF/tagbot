@@ -3,18 +3,20 @@
 
 import argparse
 import sys
-#sleep in main loop
+# sleep in main loop
 import time
-#wrappers around Slack API
+# wrappers around Slack API
 from commonTools import *
-#slack API
+# slack API
 from slackclient import SlackClient
-#url extraction
+# url extraction
 import re
-#database mngmt
+# database mngmt
 import sqlite3
-#date
-from datetime import date
+# date
+from datetime import date, timedelta
+# Markdown to HTML
+import markdown
 
 parser = argparse.ArgumentParser(description = 'Tag bot')
 parser.add_argument('slackbot_token', type=str, help='An ID for the slackbot')
@@ -27,6 +29,8 @@ COMMAND_WORD = 'sum-up'
 SLACK_CLIENT ,BOT_ID ,AT_BOT, AT_CHAN = get_slackConstants(SLACKBOT_TOKEN, "tagbot")
 
 MONITORED_REACTIONS_PREFIX = ['flag-','avp','kolor', 'goprovr', 'ptp']
+
+WEEKDAYS=['Mon.', 'Tue.', 'Wed.', 'Thu.', 'Fri.', 'Sat.', 'Sun.']
 
 #print('client :', SLACK_CLIENT)
 #print('BOT_ID :', BOT_ID)
@@ -59,7 +63,7 @@ def connectToDB(dbName):
         )
         """)
         conn.commit()
-        print( 'table created : {}'.format(DATABASE))
+        print( 'table used : {}'.format(DATABASE))
     except sqlite3.OperationalError:
         print('Table already exists')
     except Exception as e:
@@ -170,6 +174,43 @@ def retrieveWeekSummary(conn):
     """
     format the database query from the current week
     """
+    today = date.today()
+    delta = timedelta(days=-6)
+    lastWeek = today + delta
+
+    cursor = conn.cursor()
+    cursor.execute("""SELECT date, link, tags, postedBy, originalMessage  FROM links WHERE date > ? ORDER BY date ASC """, (lastWeek.isoformat(),))
+    entries = cursor.fetchall()
+    displayMsg = ''
+
+    displayMsg += 'Selection of links posted between {} {} and {} {}:'.format(
+        WEEKDAYS[lastWeek.weekday()], lastWeek.isoformat(),
+        WEEKDAYS[today.weekday()], today.isoformat()
+        ) + '\n'
+    markdownMsg = '#' + displayMsg + '___________\n'
+
+    print('database content by date:')
+    displayMsg += 'DATE    | LINK    | TAGS | AUTHOR | MSG |\n'
+    markdownMsg += 'DATE    |LINK    |TAGS |AUTHOR |SLACK MESSAGE |\n'
+    markdownMsg += ':-------|:-------|:----|:------|:-------------|\n'
+    for e in entries:
+        creation_date = e[0]
+        link = e[1]
+        tags = e[2].replace(',', ', ')
+        author = e[3]
+        msg = e[4]
+        displayMsg += '{}  | {} | {} | {} | {}\n'.format(creation_date, link, tags, author, msg)
+        markdownMsg += '{}  | [{}]({}) | {} | {} | {}\n'.format(creation_date, link, link, tags, author,
+                                                                msg.replace('|','\|').replace('>','\>'))
+
+    print displayMsg
+    print '----'
+    print markdownMsg
+    print '----'
+    with open('{}_report.html'.format(today.isoformat()), 'w') as htmlFile:
+        htmlMsg = markdown.markdown(markdownMsg, extensions=['markdown.extensions.tables'])
+        htmlFile.write(htmlMsg)
+
     printDB(conn)
     return 0
 
