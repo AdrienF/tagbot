@@ -29,10 +29,10 @@ def get_slackConstants(slackbot_token, name):
     BOT_ID = get_botID(SLACK_CLIENT, name)
     AT_BOT = "<@" + BOT_ID + "> "
     AT_CHAN = "<!channel> "
-    return  SLACK_CLIENT,BOT_ID,AT_BOT,AT_CHAN
+    return SLACK_CLIENT, BOT_ID, AT_BOT, AT_CHAN
 
 #___ Functions
-def parse_slack_message(slack_rtm_output, AT_BOT):
+def parse_slack_message(slack_rtm_output, AT_BOT, BOT_ID):
     output_list = slack_rtm_output
     if output_list and len(output_list) > 0:
         for output in output_list:
@@ -40,8 +40,9 @@ def parse_slack_message(slack_rtm_output, AT_BOT):
             if t == 'message':
                 text = output['text']
                 channel = output['channel']
-                print('intercepted in {} : {}'.format(channel, text))
-                if AT_BOT in text :
+                author=output['user']
+                if AT_BOT in text and not author == BOT_ID :
+                    print('intercepted in {} : {}'.format(channel, text))
                     return text.split(AT_BOT)[1].strip().lower(), channel
 
     return None, None

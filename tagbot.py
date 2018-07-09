@@ -368,7 +368,7 @@ if __name__ == "__main__":
             while True:
                 rtm_output = SLACK_CLIENT.rtm_read()
                 #monitor messages adressed to the bot
-                command, channel = parse_slack_message(rtm_output,AT_BOT)
+                command, channel = parse_slack_message(rtm_output,AT_BOT, BOT_ID)
                 if command is not None and channel is not None:
                     print('command : {}; channel : {}'.format(command, channel))
                     if command.startswith(COMMAND_WORD):
