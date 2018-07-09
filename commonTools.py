@@ -37,10 +37,13 @@ def parse_slack_message(slack_rtm_output, AT_BOT, BOT_ID):
     if output_list and len(output_list) > 0:
         for output in output_list:
             t = output['type']
-            if t == 'message':
+            hidden = False
+            if 'hidden' in output:
+                hidden = output['hidden']
+            if t == 'message' and not hidden:
                 text = output['text']
                 channel = output['channel']
-                author=output['user']
+                author = output['user']
                 if AT_BOT in text and not author == BOT_ID :
                     print('intercepted in {} : {}'.format(channel, text))
                     return text.split(AT_BOT)[1].strip().lower(), channel
