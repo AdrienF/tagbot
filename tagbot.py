@@ -181,8 +181,12 @@ def removeTagFromDB(conn, item):
         currentTags.remove(newtag)
         print('--> tag list is now : {}'.format(currentTags))
         try:
-            # update the row
-            cursor.execute("""UPDATE links SET tags = ? WHERE link = ?""", (setTagsString(currentTags),url,))
+            if len(currentTags) == 0 :
+                # delete the row
+                cursor.execute("""DELETE FROM links WHERE timestamp = ?""",(ts,))
+            else :
+                # update the row
+                cursor.execute("""UPDATE links SET tags = ? WHERE link = ?""", (setTagsString(currentTags),url,))
             conn.commit()
         except sqlite3.Error as e:
             print("editRow : Database error: {}".format(e))
