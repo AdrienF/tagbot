@@ -26,8 +26,8 @@ parser.add_argument('--htmldir', nargs=1, type=str, default='.',
 args = parser.parse_args()
 
 SLACKBOT_TOKEN = args.slackbot_token
-DATABASE = args.database
-HTMLDIR= args.htmldir
+DATABASE = args.database[0]
+HTMLDIR= args.htmldir[0]
 COMMAND_WORD = 'sum-up'
 SLACK_CLIENT ,BOT_ID ,AT_BOT, AT_CHAN = get_slackConstants(SLACKBOT_TOKEN, "tagbot")
 
