@@ -62,7 +62,8 @@ def connectToDB(dbName):
              originalMessage TEXT,
              date TEXT,
              tags TEXT,
-             channel TEXT
+             channel TEXT,
+             timestamp TEXT
         )
         """)
         conn.commit()
@@ -81,7 +82,7 @@ def insertRow(conn, item):
     try:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO links(link, postedBy, originalMessage, date, tags, channel) VALUES(:link, :postedBy, :originalMessage, :date, :tags, :channel);""", 
+            INSERT INTO links(link, postedBy, originalMessage, date, tags, channel, timestamp) VALUES(:link, :postedBy, :originalMessage, :date, :tags, :channel, :timestamp);""",
             item)
         conn.commit()
     except sqlite3.Error as e:
@@ -153,28 +154,39 @@ def removeTagFromDB(conn, item):
     print('removing tag {} from row {}'.format(item['tags'],item['link']))
     cursor = conn.cursor()
     url = item['link']
-    cursor.execute("""SELECT tags FROM links WHERE link = ?""",(url,))
-    entry = cursor.fetchone()
-    print('entry : {}'.format(entry))
-    currentTags = getTagsSet(entry[0])
-    print('tags for link {} : {}'.format(url, currentTags))
-    newtag = item['tags']
-    print('remove tag : {}'.format(newtag))
-    currentTags.remove(newtag)
-    try:
-        if len(currentTags) == 0:
+
+    ts = item['timestamp']
+    if url is None or url == '':
+        # special case where the last reaction has been removed from message
+        print('Null url, removing row with timestamp {}.'.format(ts))
+        try:
             # delete the row
-            cursor.execute("""DELETE FROM links WHERE link = ?""",(url,))
-        else:
+            cursor.execute("""DELETE FROM links WHERE timestamp = ?""",(ts,))
+        except sqlite3.Error as e:
+            print("editRow : Database error when deleting row : {}".format(e))
+        except Exception as e:
+            print("editRowRow : Error when deleting row : {}".format(e))
+            conn.rollback()
+    else:
+        # update the row to remove the specific tag
+        cursor.execute("""SELECT tags FROM links WHERE link = ?""",(url,))
+        entry = cursor.fetchone()
+        print('entry : {}'.format(entry))
+        currentTags = getTagsSet(entry[0])
+        print('tags for link {} : {}'.format(url, currentTags))
+        newtag = item['tags']
+        print('remove tag : {}'.format(newtag))
+        currentTags.remove(newtag)
+        print('--> tag list is now : {}'.format(currentTags))
+        try:
             # update the row
             cursor.execute("""UPDATE links SET tags = ? WHERE link = ?""", (setTagsString(currentTags),url,))
-        conn.commit()
-    except sqlite3.Error as e:
-        print("editRow : Database error: {}".format(e))
-    except Exception as e:
-        print("editRowRow : Error : {}".format(e))
-        conn.rollback()
-
+            conn.commit()
+        except sqlite3.Error as e:
+            print("editRow : Database error: {}".format(e))
+        except Exception as e:
+            print("editRowRow : Error : {}".format(e))
+            conn.rollback()
 
     return 0
 
@@ -297,12 +309,20 @@ def interceptReactions(channel, reactionObject, prefix, conn):
             channelName = '-REDACTED-'
 
         #get the message content
-        itemText = retrieveMessageContent(itemAuthor, reactingToItem['ts'])
+        # HACK : as bots are not allowed to access the history of messages in a channel
+        # (https://api.slack.com/methods/channels.history)
+        # we instead retrieve the list of message userReacting has reacted to and return one with the right timestamp
+        # When deleting the last reaction to a message, the retrieved item is an empty string
+        itemText = retrieveMessageContent(userReacting, reactingToItem['ts'])
+
+        deleteMe = False
+        if not isAdded and itemText == '':
+            deleteMe = True
 
         #get the link within the message
         url = extractURLFromMessage(itemText)
 
-        if url is None or not url:
+        if not deleteMe and (url is None or not url):
             return
 
         #format the item to feed in the db
@@ -313,7 +333,8 @@ def interceptReactions(channel, reactionObject, prefix, conn):
                   'originalMessage' : itemText,
                   'date' : date.today().isoformat(),
                   'tags' : reactionName,
-                  'channel' : channelName}
+                  'channel' : channelName,
+                  'timestamp' : reactingToItem['ts']}
         if conn is not None :
             if isAdded:
                 insertTagInDB(conn, dbItem)
