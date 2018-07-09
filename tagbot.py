@@ -97,7 +97,9 @@ def getTagsSet(value):
     :param value:
     :return:
     """
-    return set(value.split(u','))
+    if len(value) == 0:
+        return set()
+    return set(value.replace(u' ','').split(u','))
 
 def setTagsString(tags):
     """
@@ -209,30 +211,26 @@ def retrieveWeekSummary(conn):
         ) + '\n'
     markdownMsg = '#' + displayMsg + '___________\n'
 
-    print('database content by date:')
-    displayMsg += 'DATE    | LINK    | TAGS | AUTHOR | MSG |\n'
     markdownMsg += 'DATE    |LINK    |TAGS |AUTHOR |SLACK MESSAGE |\n'
     markdownMsg += ':-------|:-------|:----|:------|:-------------|\n'
     for e in entries:
         creation_date = e[0]
         link = e[1]
         tags = e[2].replace(',', ', ')
+        displayTags = ' '.join([':'+t+':' for t in getTagsSet(tags)])
         author = e[3]
         msg = e[4]
-        displayMsg += '{}  | {} | {} | {} | {}\n'.format(creation_date, link, tags, author, msg)
-        markdownMsg += '{}  | [{}]({}) | {} | {} | {}\n'.format(creation_date, link, link, tags, author,
+        linkDomain = extractDomainFromURL(link)
+        displayMsg += '* {} : <{}|{}> {} posted by {}\n'.format(creation_date, link, linkDomain, displayTags, author)
+        markdownMsg += '{}  | [{}]({}) | {} | {} | {}\n'.format(creation_date, linkDomain, link, tags, author,
                                                                 msg.replace('|','\|').replace('>','\>'))
 
-    print displayMsg
-    print '----'
-    print markdownMsg
-    print '----'
     with open('{}/{}_report.html'.format(HTMLDIR, today.isoformat()), 'w') as htmlFile:
         htmlMsg = markdown.markdown(markdownMsg, extensions=['markdown.extensions.tables'])
         htmlFile.write(htmlMsg)
 
-    printDB(conn)
-    return 0
+    #printDB(conn)
+    return displayMsg
 
 def printDB(conn):
     try:
@@ -262,7 +260,6 @@ def retrieveMessageContent(user, ts):
     return ''
 
 def extractURLFromMessage(text):
-    #urlregexp = '<http(s)?://.*?>'
     urlregexp = '(?:<)(http(?:s)?://[^|]*)(?:\|?)(.*)(?:>)'
     #group(1) = normalized URL
     #group(2) = typed URL
@@ -272,17 +269,28 @@ def extractURLFromMessage(text):
     else :
         return None
 
+
+def extractDomainFromURL(url):
+    domainregexp = '(?:http(?:s)?://)?([^/]*?/)'
+    match = re.search(domainregexp, url+'/')
+    if match:
+        return match.group(0)
+    else :
+        return None
+
+
 def sumUp(channel, conn):
     """
     Read the db, sum up the current week, generate an html report and post a link to it in the channel.
     :param: channel : the channel in which to post the answer
     :return: nothing
     """
-    print('Exectuting command \'sum-up\'')
-    if conn:
-        retrieveWeekSummary(conn)
+    print('Executing command \'sum-up\'')
     message = 'Sure, will do!'
+    if conn:
+        message = retrieveWeekSummary(conn)
     SLACK_CLIENT.api_call("chat.postMessage", channel=channel, text=message, as_user=True)
+
 
 def interceptReactions(channel, reactionObject, prefix, conn):
     if reactionObject is not None:
@@ -291,6 +299,10 @@ def interceptReactions(channel, reactionObject, prefix, conn):
         reactingToItem = reactionObject['item']
         itemAuthor = reactionObject['item_user']
         isAdded = 'reaction_added' == reactionObject['type']
+
+        print('Intercepted reaction')
+        print('reactingToItem={}', reactingToItem)
+        print('reactionObject={}', reactionObject)
 
         if reactingToItem['type'] != 'message':
             #only reaction to messages are used
