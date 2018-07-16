@@ -17,18 +17,24 @@ import sqlite3
 from datetime import date, timedelta
 # Markdown to HTML
 import markdown
+# Error logging
+import logging
 
 parser = argparse.ArgumentParser(description = 'Tag bot')
 parser.add_argument('slackbot_token', type=str, help='An ID for the slackbot')
 parser.add_argument('--database', nargs=1, type=str, default='database.db', help='The name of the database')
 parser.add_argument('--htmldir', nargs=1, type=str, default='.',
                     help='The directory containing output HTML for weekly digests')
+parser.add_argument('--logfile', nargs=1, type=str, default='{}.log'.format(date.today().isoformat()),
+                    help='The log file where traces are dump')
 args = parser.parse_args()
 
 SLACKBOT_TOKEN = args.slackbot_token
 DATABASE = args.database[0]
 HTMLDIR= args.htmldir[0]
+LOGFILE = args.logfile[0]
 COMMAND_WORD = 'sum-up'
+READ_WEBSOCKET_DELAY = 1  # 1 second delay between reading from firehose
 SLACK_CLIENT ,BOT_ID ,AT_BOT, AT_CHAN = get_slackConstants(SLACKBOT_TOKEN, "tagbot")
 
 MONITORED_REACTIONS_PREFIX = ['flag-','avp','kolor', 'goprovr', 'ptp']
@@ -40,7 +46,6 @@ WEEKDAYS=['Mon.', 'Tue.', 'Wed.', 'Thu.', 'Fri.', 'Sat.', 'Sun.']
 #print('AT_BOT :', AT_BOT)
 #print('AT_CHAN :', AT_CHAN)
 
-
 def connectToDB(dbName):
     """
     Connect to the database. Eventually create it
@@ -48,8 +53,8 @@ def connectToDB(dbName):
     try:
         conn = sqlite3.connect(DATABASE)
     except Exception as e:
-        print('connectDB : Unable to connect to {}'.format(DATABASE))
-        print('          : {}'.format(e))
+        logging.warning('connectDB : Unable to connect to {}'.format(DATABASE))
+        logging.warning('          : {}'.format(e))
         return None
 
     #create db
@@ -67,18 +72,18 @@ def connectToDB(dbName):
         )
         """)
         conn.commit()
-        print( 'table used : {}'.format(DATABASE))
+        logging.info( 'table used : {}'.format(DATABASE))
     except sqlite3.OperationalError:
-        print('Table already exists')
+        logging.warning('Table already exists')
     except Exception as e:
-        print("Error in connectToDB.")
+        logging.error("Error in connectToDB.")
         conn.rollback()
         raise e
     
     return conn
 
 def insertRow(conn, item):
-    print('inserting new row : ', item)
+    logging.info('inserting new row : ', item)
     try:
         cursor = conn.cursor()
         cursor.execute("""
@@ -86,9 +91,9 @@ def insertRow(conn, item):
             item)
         conn.commit()
     except sqlite3.Error as e:
-        print("insertRow : Database error: {}".format(e))
+        logging.info("Database error: {}".format(e))
     except Exception as e:
-        print("insertRow : Error : {}".format(e))
+        logging.error(e)
         conn.rollback()
 
 def getTagsSet(value):
@@ -110,25 +115,25 @@ def setTagsString(tags):
     return ','.join(tags)
 
 def editRow(conn, item):
-    print('---- editing row with new tag ----')
-    print('inserting item : {}'.format(item))
+    logging.info('---- editing row with new tag ----')
+    logging.info('inserting item : {}'.format(item))
     cursor = conn.cursor()
     url = item['link']
     cursor.execute("""SELECT tags FROM links WHERE link = ?""",(url,))
     entry = cursor.fetchone()
-    print('entry : {}'.format(entry))
+    logging.info('entry : {}'.format(entry))
     currentTags = getTagsSet(entry[0])
-    print('current tags for link {} : {}'.format(url, currentTags))
+    logging.info('current tags for link {} : {}'.format(url, currentTags))
     newtag = item['tags']
-    print('insert a new tag : {}'.format(newtag))
+    logging.info('insert a new tag : {}'.format(newtag))
     currentTags.add(newtag)
     try:
         cursor.execute("""UPDATE links SET tags = ? WHERE link = ?""", (setTagsString(currentTags),url,))
         conn.commit()
     except sqlite3.Error as e:
-        print("editRow : Database error: {}".format(e))
+        logging.error("Database error: {}".format(e))
     except Exception as e:
-        print("editRowRow : Error : {}".format(e))
+        logging.error(e)
         conn.rollback()
 
 def insertTagInDB(conn, item):
@@ -153,33 +158,33 @@ def removeTagFromDB(conn, item):
     """
     search item in DB and remove the item tag from the entry
     """
-    print('removing tag {} from row {}'.format(item['tags'],item['link']))
+    logging.info('removing tag {} from row {}'.format(item['tags'],item['link']))
     cursor = conn.cursor()
     url = item['link']
 
     ts = item['timestamp']
     if url is None or url == '':
         # special case where the last reaction has been removed from message
-        print('Null url, removing row with timestamp {}.'.format(ts))
+        logging.info('Null url, removing row with timestamp {}.'.format(ts))
         try:
             # delete the row
             cursor.execute("""DELETE FROM links WHERE timestamp = ?""",(ts,))
         except sqlite3.Error as e:
-            print("editRow : Database error when deleting row : {}".format(e))
+            logging.error("Database error when deleting row : {}".format(e))
         except Exception as e:
-            print("editRowRow : Error when deleting row : {}".format(e))
+            logging.error("Error when deleting row : {}".format(e))
             conn.rollback()
     else:
         # update the row to remove the specific tag
         cursor.execute("""SELECT tags FROM links WHERE link = ?""",(url,))
         entry = cursor.fetchone()
-        print('entry : {}'.format(entry))
+        logging.info('entry : {}'.format(entry))
         currentTags = getTagsSet(entry[0])
-        print('tags for link {} : {}'.format(url, currentTags))
+        logging.info('tags for link {} : {}'.format(url, currentTags))
         newtag = item['tags']
-        print('remove tag : {}'.format(newtag))
+        logging.info('remove tag : {}'.format(newtag))
         currentTags.remove(newtag)
-        print('--> tag list is now : {}'.format(currentTags))
+        logging.info('--> tag list is now : {}'.format(currentTags))
         try:
             if len(currentTags) == 0 :
                 # delete the row
@@ -189,9 +194,9 @@ def removeTagFromDB(conn, item):
                 cursor.execute("""UPDATE links SET tags = ? WHERE link = ?""", (setTagsString(currentTags),url,))
             conn.commit()
         except sqlite3.Error as e:
-            print("editRow : Database error: {}".format(e))
+            logging.error("Database error: {}".format(e))
         except Exception as e:
-            print("editRowRow : Error : {}".format(e))
+            logging.error(e)
             conn.rollback()
 
     return 0
@@ -241,17 +246,17 @@ def printDB(conn):
         cursor = conn.cursor()
         cursor.execute("""SELECT * FROM links""")
         entries = cursor.fetchall()
-        print('database content:')
+        logging.info('database content:')
         for e in entries:
-            print('    {}'.format(e))
+            logging.info('    {}'.format(e))
     except  Exception as er:
-        print('printDB : Error : {}'.format(er))
+        logging.error('printDB : Error : {}'.format(er))
 
 def closeDB(conn):
     """
     Close the database
     """
-    print('Closing database')
+    logging.info('Closing database')
     conn.close()
     return 0
 
@@ -289,7 +294,7 @@ def sumUp(channel, conn):
     :param: channel : the channel in which to post the answer
     :return: nothing
     """
-    print('Executing command \'sum-up\'')
+    logging.info('Executing command \'sum-up\'')
     message = 'Sure, will do!'
     if conn:
         message = retrieveWeekSummary(conn)
@@ -304,9 +309,9 @@ def interceptReactions(channel, reactionObject, prefix, conn):
         itemAuthor = reactionObject['item_user']
         isAdded = 'reaction_added' == reactionObject['type']
 
-        print('Intercepted reaction')
-        print('reactingToItem={}', reactingToItem)
-        print('reactionObject={}', reactionObject)
+        logging.info('Intercepted reaction')
+        logging.info('reactingToItem=%s', reactingToItem)
+        logging.info('reactionObject=%s', reactionObject)
 
         if reactingToItem['type'] != 'message':
             #only reaction to messages are used
@@ -357,7 +362,7 @@ def interceptReactions(channel, reactionObject, prefix, conn):
             else:
                 removeTagFromDB(conn, dbItem)
         else:
-            print('Unable to use database, NULL connection')
+            logging.warning('Unable to use database, NULL connection')
 
         message = 'User {} reacted to the message of {} with {} (status is \'{}\') in channel {}'.format(
                 userName, 
@@ -365,28 +370,30 @@ def interceptReactions(channel, reactionObject, prefix, conn):
                 reactionName, 
                 status,
                 channelName) 
-        print(message)
-        print('The message : {} contains url : {}'.format(itemText, url))
+        logging.info(message)
+        logging.info('The message : {} contains url : {}'.format(itemText, url))
         #SLACK_CLIENT.api_call(
         #        "chat.postMessage", 
         #        channel=channel, 
         #        text=message,
         #        as_user=True)
 
+
 #___ Main
 if __name__ == "__main__":
-    READ_WEBSOCKET_DELAY = 1 # 1 second delay between reading from firehose
+    # configure logging
+    logging.basicConfig(filename=LOGFILE, level=logging.DEBUG, format='%(asctime)s\t%(levelno)s %(funcName)s:%(lineno)s\t%(message)s')
     try:
         conn = connectToDB(DATABASE)
-        print("Listening with a {} second delay".format(READ_WEBSOCKET_DELAY))
+        logging.info("Listening with a {} second delay".format(READ_WEBSOCKET_DELAY))
         if SLACK_CLIENT.rtm_connect():
-            print("tagbot connected and running!")
+            logging.info("tagbot connected and running!")
             while True:
                 rtm_output = SLACK_CLIENT.rtm_read()
                 #monitor messages adressed to the bot
                 command, channel = parse_slack_message(rtm_output,AT_BOT, BOT_ID)
                 if command is not None and channel is not None:
-                    print('command : {}; channel : {}'.format(command, channel))
+                    logging.info('command : {}; channel : {}'.format(command, channel))
                     if command.startswith(COMMAND_WORD):
                         sumUp(channel, conn)
                 #monitor reactions to message
@@ -395,9 +402,9 @@ if __name__ == "__main__":
                 #sleep
                 time.sleep(READ_WEBSOCKET_DELAY)
         else:
-            print("Connection failed. Invalid Slack token or bot ID?")
+            logging.warning("Connection failed. Invalid Slack token or bot ID?")
     except Exception as e:
-        print('Something wrong happened : {}'.format(e))
+        logging.error('Something wrong happened : {}'.format(e))
         conn.rollback()
     finally:
         closeDB(conn)

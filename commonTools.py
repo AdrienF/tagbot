@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from slackclient import SlackClient
+import logging
 
 def get_botID(slack_client, name):
     api_call = slack_client.api_call("users.list")
@@ -41,11 +42,12 @@ def parse_slack_message(slack_rtm_output, AT_BOT, BOT_ID):
             if 'hidden' in output:
                 hidden = output['hidden']
             if t == 'message' and not hidden:
+                logging.info(output)
                 text = output['text']
                 channel = output['channel']
                 author = output['user']
                 if AT_BOT in text and not author == BOT_ID :
-                    print('intercepted in {} : {}'.format(channel, text))
+                    logging.info('intercepted in {} : {}'.format(channel, text))
                     return text.split(AT_BOT)[1].strip().lower(), channel
 
     return None, None
@@ -60,6 +62,7 @@ def parse_slack_reactions(slack_rtm_output, reactionPrefixes):
             if output is not None and 'type' in output:
                 if 'reaction_added' in output['type'] or 'reaction_removed' in output['type']:
                     reactionName = output['reaction']
+                    logging.info('reaction parsed, type is {},reaction name is {}'.format(output['type'], reactionName))
                     for prefix in reactionPrefixes:
                         if reactionName.startswith(prefix):
                             yield prefix, output
