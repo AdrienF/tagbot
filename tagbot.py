@@ -208,6 +208,8 @@ def retrieveWeekSummary(conn):
     today = date.today()
     delta = timedelta(days=-6)
     lastWeek = today + delta
+    htmlFile='{}/{}_report.html'.format(HTMLDIR, today.isoformat())
+
 
     cursor = conn.cursor()
     cursor.execute("""SELECT date, link, tags, postedBy, originalMessage  FROM links WHERE date > ? ORDER BY date ASC """, (lastWeek.isoformat(),))
@@ -218,6 +220,7 @@ def retrieveWeekSummary(conn):
         WEEKDAYS[lastWeek.weekday()], lastWeek.isoformat(),
         WEEKDAYS[today.weekday()], today.isoformat()
         ) + '\n'
+    displayMsg += 'Also available on <{}|{}>.\n'.format(htmlFile, htmlFile)
     markdownMsg = '#' + displayMsg + '___________\n'
 
     markdownMsg += 'DATE    |LINK    |TAGS |AUTHOR |SLACK MESSAGE |\n'
@@ -234,7 +237,7 @@ def retrieveWeekSummary(conn):
         markdownMsg += '{}  | [{}]({}) | {} | {} | {}\n'.format(creation_date, linkDomain, link, tags, author,
                                                                 msg.replace('|','\|').replace('>','\>'))
 
-    with open('{}/{}_report.html'.format(HTMLDIR, today.isoformat()), 'w') as htmlFile:
+    with open(htmlFile, 'w') as htmlFile:
         htmlMsg = markdown.markdown(markdownMsg, extensions=['markdown.extensions.tables'])
         htmlFile.write(htmlMsg)
 
